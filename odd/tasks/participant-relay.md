@@ -54,3 +54,8 @@ persist call site ~:1646).
   no taskId reaches the child via argv/env/session file; `tasks/<taskId>.json`
   (with `sessionPath`) persists only at exit; the bus event exposes
   taskId+status but `sessionId: parentSessionId`.
+- L3 (2026-11-20): T1+T2 done (commit 37b86f4; 14/14 tests). Design
+  decision: an unreadable child journal still relays a participant record
+  with metrics: null — explicit no-data keyed by taskId, not silence.
+  Remaining: the herdr-sidecar consumer fold keyed by taskId (T5 of
+  tokstream.md over there) and rendering per-agent TPS on the cards.
