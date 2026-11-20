@@ -18,7 +18,10 @@ export default function tokstream(pi: ExtensionAPI) {
   };
 
   pi.on('session_start', async (_event, ctx) => {
-    journal.openSession(ctx.sessionManager?.getSessionFile?.());
+    journal.openSession(
+      ctx.sessionManager?.getSessionFile?.(),
+      ctx.sessionManager?.getSessionId?.(),
+    );
   });
   pi.on('session_shutdown', () => journal.close());
 
@@ -27,8 +30,9 @@ export default function tokstream(pi: ExtensionAPI) {
     if (count > 0) {
       sampler.delta(count);
       const snap = sampler.snapshot();
-      if (snap.active) {
-        // Throttled live sample; consumers render the last value.
+      if (snap.active && snap.tps != null) {
+        // Throttled live sample with a measured value only; consumers render
+        // the last value. A sample without a value is not data.
         journal.append('sample', {
           tps: snap.tps,
           source: snap.source,
