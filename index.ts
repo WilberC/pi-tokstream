@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { createSampler } from './lib/sampler.mjs';
+import { createJournal } from './lib/journal.mjs';
 
 // pi-tokstream: producer-only throughput data. Measures the main model's
 // output rate while streaming and keeps provider-reported usage per message.
@@ -7,6 +8,7 @@ import { createSampler } from './lib/sampler.mjs';
 // snapshots and own all presentation. Estimates are always labeled as such.
 export default function tokstream(pi: ExtensionAPI) {
   const sampler = createSampler();
+  const journal = createJournal({ sessionId: '', producer: 'pi-tokstream' });
 
   const countTextDeltas = (event: unknown): number => {
     const e = event as { assistantMessageEvent?: { type?: string; delta?: string } };
@@ -15,9 +17,25 @@ export default function tokstream(pi: ExtensionAPI) {
       : 0;
   };
 
+  pi.on('session_start', async (_event, ctx) => {
+    journal.openSession(ctx.sessionManager?.getSessionFile?.());
+  });
+  pi.on('session_shutdown', () => journal.close());
+
   pi.on('message_update', async (event) => {
     const count = countTextDeltas(event);
-    if (count > 0) sampler.delta(count);
+    if (count > 0) {
+      sampler.delta(count);
+      const snap = sampler.snapshot();
+      if (snap.active) {
+        // Throttled live sample; consumers render the last value.
+        journal.append('sample', {
+          tps: snap.tps,
+          source: snap.source,
+          ts: new Date().toISOString(),
+        });
+      }
+    }
   });
 
   pi.on('message_end', async (event) => {
@@ -25,7 +43,12 @@ export default function tokstream(pi: ExtensionAPI) {
       | { role?: string; usage?: Record<string, number> }
       | undefined;
     if (message?.role === 'assistant' && message.usage) {
-      sampler.usage(message.usage);
+      const r = sampler.usage(message.usage);
+      journal.append('usage', {
+        tps: r.reportedTps,
+        source: r.reportedTps != null ? 'reported' : null,
+        reported: r.reported,
+      });
     }
   });
 

@@ -26,6 +26,18 @@ pi install npm:pi-tokstream
 - Subagent correlation is out of scope for the basic version; the sampler
   covers the main model only.
 
+## Journal (for renderers)
+
+The extension appends an append-only JSONL journal next to the Pi session
+file: `pi-tokstream.journal.jsonl`. Two record types, each self-sufficient:
+
+- `sample` — throttled live estimate while streaming: `{tps, source:"estimated", ts}`.
+- `usage` — provider-reported data after the message finalizes: `{tps, source, reported:{input, output, cacheRead, cacheWrite}}`. Missing categories are `null`, never zero.
+
+Consumers must tolerate unknown fields and unknown `type` values, must
+present estimates as estimates, and must degrade explicitly when data is
+absent — never compute throughput themselves.
+
 ## Development
 
 ```bash
