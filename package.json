@@ -1,0 +1,37 @@
+{
+  "name": "pi-tokstream",
+  "version": "0.1.0",
+  "description": "Producer-only token throughput data for Pi: live tok/s while streaming plus provider-reported usage per exchange, with no rendering. Built to feed renderers like herdr-sidecar.",
+  "license": "MIT",
+  "type": "module",
+  "author": "WilberC",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "throughput",
+    "tokens"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WilberC/pi-tokstream.git"
+  },
+  "homepage": "https://github.com/WilberC/pi-tokstream#readme",
+  "bugs": {
+    "url": "https://github.com/WilberC/pi-tokstream/issues"
+  },
+  "files": [
+    "index.ts",
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
