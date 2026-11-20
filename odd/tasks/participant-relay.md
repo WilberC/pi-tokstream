@@ -59,3 +59,26 @@ persist call site ~:1646).
   with metrics: null — explicit no-data keyed by taskId, not silence.
   Remaining: the herdr-sidecar consumer fold keyed by taskId (T5 of
   tokstream.md over there) and rendering per-agent TPS on the cards.
+- L4 (2026-11-20): sidecar side DONE (herdr-sidecar-tokstream 857a1ee).
+  Feature complete for the agreed scope.
+
+## Resume (2026-11-20, handoff to a new session)
+
+State: ALL tasks done (T1, T2 of this doc; journal + orchestrator TPS
+samples in the base work). Nothing pending in this repo.
+
+Next steps, in order:
+1. Install the updated package in Pi (`pi install` the local path or
+   npm publish, user's choice) and verify in a real Gentle Shell session:
+   run a subagent, let it finish, check the parent journal grows a
+   `participant` record and the sidecar card shows its numbers.
+2. Push/PR `main` of this repo — user's decision, not done.
+3. Optional follow-up: live per-agent TPS needs a gentle-pi host change
+   (inject the child's taskId at launch, `lib/agents-runner.ts` launch())
+   — researched, evidence in L2; requires explicit user authorization as
+   a separate PR to gentle-shell.
+
+Key facts: journal contract in README (sample/usage/participant); the
+relay keys on gentle-pi's `tasks/<taskId>.json`, persisted only at task
+exit; children already run this extension via inheritance (guard
+`GENTLE_PI_AGENTS_CHILD`).
