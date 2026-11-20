@@ -33,6 +33,7 @@ file: `pi-tokstream.journal.jsonl`. Two record types, each self-sufficient:
 
 - `sample` — throttled live estimate while streaming: `{tps, source:"estimated", ts}`.
 - `usage` — provider-reported data after the message finalizes: `{tps, source, reported:{input, output, cacheRead, cacheWrite}}`. Missing categories are `null`, never zero.
+- `participant` — one per finished subagent task, written by the PARENT after gentle-pi persists the TaskRecord: `{taskId, agent, status, childPath, metrics}` where `metrics` is the child's own last reported usage (`{tps, source, reported, ts}`) or `null` when the child measured nothing. Relay only: the parent never computes throughput.
 
 Consumers must tolerate unknown fields and unknown `type` values, must
 present estimates as estimates, and must degrade explicitly when data is
