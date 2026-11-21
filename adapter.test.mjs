@@ -34,6 +34,37 @@ test('text_delta drives estimate, message_end usage drives reported record (2a,2
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('N deltas inside the window append one sample, then message_end flushes the boundary (T1)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tok-adapter-'));
+  const handlers = new Map(); const commands = new Map();
+  const { default: ext } = await import('./index.ts');
+  ext({ on: (e, f) => { handlers.set(e, f); return () => {}; },
+        registerCommand: (n, o) => commands.set(n, o) });
+  const ctx = { ui: { notify: () => {} },
+    sessionManager: { getSessionFile: () => join(dir, 's.jsonl'), getSessionId: () => 'sess-t1' } };
+  const read = () => readFileSync(join(dir, 'pi-tokstream.journal.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  await handlers.get('session_start')({ type: 'session_start' }, ctx);
+  const msg = { role: 'assistant', content: [], usage: { input: 10, output: 12 } };
+  // 12 deltas spread over ~36 ms: well inside the ~500 ms journal window.
+  for (let i = 0; i < 12; i += 1) {
+    await handlers.get('message_update')({ type: 'message_update', message: msg,
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'x'.repeat(i + 1) } }, ctx);
+    await new Promise((r) => setTimeout(r, 3));
+  }
+  const streaming = read().filter((r) => r.type === 'sample');
+  assert.equal(streaming.length, 1, `12 deltas in the window append one sample, got ${streaming.length}`);
+  await handlers.get('message_end')({ type: 'message_end', message: msg }, ctx);
+  const samples = read().filter((r) => r.type === 'sample');
+  assert.equal(samples.length, 2, 'message_end flushes exactly one final sample');
+  const last = samples.at(-1);
+  assert.equal(last.data.source, 'estimated');
+  assert.ok(last.data.tps != null && last.data.tps > 0, 'the final sample carries a measured value');
+  assert.ok(read().some((r) => r.type === 'usage' && r.data.source === 'reported'),
+    'provider usage is still recorded after the flush');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('journal contract matches pi-chat-recap line shape (2c)', async () => {
   const { JOURNAL_VERSION } = await import('./lib/journal.mjs');
   assert.equal(JOURNAL_VERSION, 1);

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { createSampler } from './lib/sampler.mjs';
+import { createSampler, createSampleThrottle } from './lib/sampler.mjs';
 import { createJournal } from './lib/journal.mjs';
 import { participantForTask } from './lib/participants.mjs';
 
@@ -68,10 +68,24 @@ const relayParticipant = (
 
 export default function tokstream(pi: ExtensionAPI) {
   const sampler = createSampler();
+  const sampleThrottle = createSampleThrottle();
   const journal = createJournal({ sessionId: '', producer: 'pi-tokstream' });
   const isChild = process.env.GENTLE_PI_AGENTS_CHILD === '1';
   let currentSessionId = '';
   let currentSessionFile: string | null = null;
+
+  const appendSample = (tps: number, source: string | null) => {
+    journal.append('sample', { tps, source, ts: new Date().toISOString() });
+  };
+
+  // Final live sample before the stream's estimate is replaced by reported
+  // usage (message_end) or a turn ends. The throttle guarantees this write
+  // whenever deltas arrived after the last one, so the last sample reflects
+  // the final state instead of the last interval boundary.
+  const flushSample = () => {
+    const tps = sampleThrottle.flush();
+    if (tps != null) appendSample(tps, 'estimated');
+  };
 
   const countTextDeltas = (event: unknown): number => {
     const e = event as { assistantMessageEvent?: { type?: string; delta?: string } };
@@ -86,6 +100,7 @@ export default function tokstream(pi: ExtensionAPI) {
       currentSessionFile,
       ctx.sessionManager?.getSessionId?.(),
     );
+    sampleThrottle.reset();
     currentSessionId = ctx.sessionManager?.getSessionId?.() ?? '';
   });
   pi.on('session_shutdown', () => journal.close());
@@ -114,18 +129,23 @@ export default function tokstream(pi: ExtensionAPI) {
       sampler.delta(count);
       const snap = sampler.snapshot();
       if (snap.active && snap.tps != null) {
-        // Throttled live sample with a measured value only; consumers render
-        // the last value. A sample without a value is not data.
-        journal.append('sample', {
-          tps: snap.tps,
-          source: snap.source,
-          ts: new Date().toISOString(),
-        });
+        // Journal writes are throttled to one per ~500 ms while streaming:
+        // a sync append per token blocks Pi's echo loop. Only measured values
+        // are written; consumers render the last value, and the final state
+        // is flushed when the message or turn ends.
+        if (sampleThrottle.offer(snap.tps)) appendSample(snap.tps, snap.source);
       }
     }
   });
 
+  pi.on('turn_end', async () => {
+    flushSample();
+  });
+
   pi.on('message_end', async (event) => {
+    // Flush the live estimate before usage() ends the measured window, so the
+    // last streaming sample still reflects the final token count.
+    flushSample();
     const message = (event as { message?: unknown }).message as
       | { role?: string; usage?: Record<string, number> }
       | undefined;
