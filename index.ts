@@ -73,6 +73,11 @@ export default function tokstream(pi: ExtensionAPI) {
   const isChild = process.env.GENTLE_PI_AGENTS_CHILD === '1';
   let currentSessionId = '';
   let currentSessionFile: string | null = null;
+  // Producer switch (the /tokstream toggle): off stops every journal write
+  // — no samples, no usage, no participant relays — and resets the sampler.
+  // Not persisted: every Pi launch starts on, so a forgotten off cannot
+  // leave the dock silently starving for data.
+  let enabled = true;
 
   const appendSample = (tps: number, source: string | null) => {
     journal.append('sample', { tps, source, ts: new Date().toISOString() });
@@ -119,11 +124,13 @@ export default function tokstream(pi: ExtensionAPI) {
       if (e?.source !== 'subagent' || typeof e.taskId !== 'string' || e.taskId === '') return;
       if (!e.event || !TERMINAL_STATUSES.has(e.event.slice('subagent.'.length))) return;
       if (e.parentSessionId && currentSessionId && e.parentSessionId !== currentSessionId) return;
+      if (!enabled) return; // off relays nothing: no production while off
       relayParticipant(journal, currentSessionFile, e.taskId);
     });
   }
 
   pi.on('message_update', async (event) => {
+    if (!enabled) return;
     const count = countTextDeltas(event);
     if (count > 0) {
       sampler.delta(count);
@@ -139,12 +146,14 @@ export default function tokstream(pi: ExtensionAPI) {
   });
 
   pi.on('turn_end', async () => {
+    if (!enabled) return;
     flushSample();
   });
 
   pi.on('message_end', async (event) => {
     // Flush the live estimate before usage() ends the measured window, so the
     // last streaming sample still reflects the final token count.
+    if (!enabled) return;
     flushSample();
     const message = (event as { message?: unknown }).message as
       | { role?: string; usage?: Record<string, number> }
@@ -160,14 +169,28 @@ export default function tokstream(pi: ExtensionAPI) {
   });
 
   pi.registerCommand('tokstream', {
-    description: 'Token throughput data: current snapshot status',
-    handler: async (_args, ctx) => {
-      const s = sampler.snapshot();
-      const tps = s.tps != null ? `${s.tps.toFixed(1)} tok/s` : 'n/a';
-      ctx.ui.notify(
-        `tokstream: ${tps} (${s.source ?? 'no data'})`,
-        'info',
-      );
+    description: 'Token throughput data: on | off | status (off stops journal production until the next launch)',
+    handler: async (args, ctx) => {
+      const action = String(args ?? '').trim().toLowerCase();
+      if (action === 'on' || action === 'off') {
+        enabled = action === 'on';
+        ctx.ui.notify(`tokstream: ${enabled ? 'on' : 'off'}${enabled ? '' : ' (journal production stopped; back on after restart or /tokstream on)'}`, 'info');
+        return;
+      }
+      if (action === '' || action === 'status') {
+        if (!enabled) {
+          ctx.ui.notify('tokstream: off (journal production stopped)', 'info');
+          return;
+        }
+        const s = sampler.snapshot();
+        const tps = s.tps != null ? `${s.tps.toFixed(1)} tok/s` : 'n/a';
+        ctx.ui.notify(
+          `tokstream: on · ${tps} (${s.source ?? 'no data'})`,
+          'info',
+        );
+        return;
+      }
+      ctx.ui.notify('Usage: /tokstream on|off|status', 'error');
     },
   });
 }

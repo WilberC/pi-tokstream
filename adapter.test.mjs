@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -69,3 +69,47 @@ test('journal contract matches pi-chat-recap line shape (2c)', async () => {
   const { JOURNAL_VERSION } = await import('./lib/journal.mjs');
   assert.equal(JOURNAL_VERSION, 1);
 });
+
+test('tokstream off stops journal production; on resumes; status reports the state', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tok-adapter-'));
+  const handlers = new Map(); const commands = new Map();
+  const { default: ext } = await import('./index.ts');
+  ext({ on: (e, f) => { handlers.set(e, f); return () => {}; },
+        registerCommand: (n, o) => commands.set(n, o) });
+  const notes = [];
+  const ctx = { ui: { notify: (m, t) => notes.push([m, t]) },
+    sessionManager: { getSessionFile: () => join(dir, 's.jsonl'), getSessionId: () => 'sess-off' } };
+  await handlers.get('session_start')({ type: 'session_start' }, ctx);
+  const msg = { role: 'assistant', content: [], usage: { input: 10, output: 5 } };
+  const stream = () => handlers.get('message_update')({ type: 'message_update', message: msg,
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello world' } }, ctx);
+
+  await commands.get('tokstream').handler('off', ctx);
+  assert.match(notes.at(-1)[0], /off/);
+  await stream();
+  await handlers.get('message_end')({ type: 'message_end', message: msg }, ctx);
+  assert.equal(readLines(dir).length, 0, 'off produces no journal records');
+
+  await commands.get('tokstream').handler('on', ctx);
+  assert.match(notes.at(-1)[0], /on/);
+  await stream();
+  await new Promise((r) => setTimeout(r, 10));
+  await handlers.get('message_end')({ type: 'message_end', message: msg }, ctx);
+  assert.ok(readLines(dir).length > 0, 'on resumes journal production');
+  assert.ok(readLines(dir).every((r) => r.sessionId === 'sess-off'));
+
+  await commands.get('tokstream').handler('status', ctx);
+  assert.match(notes.at(-1)[0], /on/);
+  await commands.get('tokstream').handler('', ctx);
+  assert.match(notes.at(-1)[0], /tokstream: on · (n\/a|[\d.]+ tok\/s)/, 'bare status still shows throughput-or-no-data');
+  await commands.get('tokstream').handler('wat', ctx);
+  assert.match(notes.at(-1)[0], /[Uu]sage/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function readLines(dir) {
+  const p = join(dir, 'pi-tokstream.journal.jsonl');
+  return existsSync(p)
+    ? readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    : [];
+}

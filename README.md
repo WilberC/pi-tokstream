@@ -14,6 +14,14 @@ own all presentation.
 pi install npm:pi-tokstream
 ```
 
+## Command
+
+`/tokstream on | off | status` — `status` (or bare) reports the switch plus
+the current snapshot (`n/a (<no data>)` when nothing measured yet). `off`
+stops all journal production — no samples, no usage, no participant relays —
+until the next `/tokstream on` or a Pi restart; the switch is deliberately
+not persisted, so a forgotten `off` cannot leave renderers silently starved.
+
 ## Design boundaries
 
 - **Producer owns measurement**: estimated tok/s while streaming
