@@ -40,7 +40,7 @@ Then `/reload` inside the session.
 
 | Command | Effect |
 | --- | --- |
-| `/tokstream` or `/tokstream status` | the switch plus the current snapshot (`n/a (<no data>)` before any measurement) |
+| `/tokstream` or `/tokstream status` | the switch plus the current snapshot (`n/a (no data)` before any measurement) |
 | `/tokstream off` | stop all journal production until `/tokstream on` or a Pi restart (not persisted) |
 | `/tokstream on` | resume production |
 
