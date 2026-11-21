@@ -1,6 +1,6 @@
 {
   "name": "pi-tokstream",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Producer-only token throughput data for Pi: live tok/s while streaming plus provider-reported usage per exchange, with no rendering. Built to feed renderers like herdr-sidecar.",
   "license": "MIT",
   "type": "module",
