@@ -1,79 +1,57 @@
 # pi-tokstream
 
-Producer-only token throughput data for [Pi](https://pi.dev) and
-[Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell).
+**Live tokens per second for your Pi session, recorded as data that other
+tools can draw.** A producer-only [Pi](https://pi.dev) and
+[Gentle Shell](https://github.com/Gentleman-Programming/gentle-shell) extension.
 
-The extension measures the main model's output rate while streaming and keeps
-the provider-reported usage of each finalized message, and renders nothing.
-Renderers (for example the herdr-sidecar agents view) consume snapshots and
-own all presentation.
+## What it does
+
+While the main model streams, it estimates the output rate (tok/s); when each
+message finalizes, it keeps the provider-reported throughput and usage (input,
+output, cache read, cache write). Finished subagent tasks are relayed with
+their own last reported usage. Everything goes into an append-only JSONL
+journal beside the session file, size-rotated so it stays bounded. It renders
+nothing: renderers such as the
+[herdr-sidecar](https://github.com/WilberC/herdr-sidecar) agents view read the
+journal and own all presentation.
+
+## What it solves
+
+- **"Is the model actually streaming, and how fast?"** A side panel can show a
+  live rate without hooking into Pi itself.
+- **Invented numbers.** Estimates are labeled as estimates, provider numbers as
+  reported, and a missing category is `null`, never zero.
+- **Logs that grow forever.** The journal rotates at 2 MiB and keeps one
+  previous generation.
 
 ## Install
 
 ```bash
+# Gentle Shell
+gentle-shell install npm:pi-tokstream
+
+# Pi
 pi install npm:pi-tokstream
 ```
 
-## Command
+Then `/reload` inside the session.
 
-`/tokstream on | off | status` — `status` (or bare) reports the switch plus
-the current snapshot (`n/a (<no data>)` when nothing measured yet). `off`
-stops all journal production — no samples, no usage, no participant relays —
-until the next `/tokstream on` or a Pi restart; the switch is deliberately
-not persisted, so a forgotten `off` cannot leave renderers silently starved.
+## Quick reference
 
-## Design boundaries
+| Command | Effect |
+| --- | --- |
+| `/tokstream` or `/tokstream status` | the switch plus the current snapshot (`n/a (<no data>)` before any measurement) |
+| `/tokstream off` | stop all journal production until `/tokstream on` or a Pi restart (not persisted) |
+| `/tokstream on` | resume production |
 
-- **Producer owns measurement**: estimated tok/s while streaming
-  (`source: "estimated"`), provider-reported tok/s and usage after the
-  message finalizes (`source: "reported"`). Missing categories are `null`,
-  never zero. No throughput is invented without a measured window.
-- **Renderer owns presentation**: where the numbers appear, formatting,
-  icons, colors. It must present estimates as estimates and degrade
-  explicitly when data is absent.
-- Subagent correlation is out of scope for the basic version; the sampler
-  covers the main model only.
+## Documentation
 
-## Journal (for renderers)
+| I want to… | Read |
+| --- | --- |
+| Read the journal from a renderer | [docs/journal.md](https://github.com/WilberC/pi-tokstream/blob/main/docs/journal.md) |
+| Know who owns what between producer and renderer | [docs/design.md](https://github.com/WilberC/pi-tokstream/blob/main/docs/design.md) |
+| Run the tests | [docs/development.md](https://github.com/WilberC/pi-tokstream/blob/main/docs/development.md) |
 
-The extension appends an append-only JSONL journal next to the Pi session
-file: `pi-tokstream.journal.jsonl`. Two record types, each self-sufficient:
+## License
 
-- `sample` — live estimate while streaming: `{tps, source:"estimated", ts}`. Writes are
-  coalesced to at most one per ~500 ms, plus a final sample when the message or turn ends
-  (the last sample always reflects the final state).
-- `usage` — provider-reported data after the message finalizes: `{tps, source, reported:{input, output, cacheRead, cacheWrite}}`. Missing categories are `null`, never zero.
-- `participant` — one per finished subagent task, written by the PARENT after gentle-pi persists the TaskRecord: `{taskId, agent, status, childPath, metrics}` where `metrics` is the child's own last reported usage (`{tps, source, reported, ts}`) or `null` when the child measured nothing. Relay only: the parent never computes throughput.
-
-Consumers must tolerate unknown fields and unknown `type` values, must
-present estimates as estimates, and must degrade explicitly when data is
-absent — never compute throughput themselves.
-
-### Rotation and bounded re-reads
-
-The journal path is keyed by producer, so one file accumulates every session
-written beside the same Pi session directory. To keep that bounded, the
-producer rotates the file by size: when the live `pi-tokstream.journal.jsonl`
-reaches 2 MiB (default, `createJournal({maxBytes})` overrides it; `0` disables
-rotation) the next append renames it to `pi-tokstream.journal.jsonl.1` and
-continues in a fresh file. One previous generation is kept (`keepRotated`);
-older ones are replaced. The line format is identical in both files — only the
-name changes — and rotation is checked at append time from a buffered byte
-estimate, so the common append stays a single O(1) write.
-
-Consumers keep working without changes: a byte-offset tail must already
-refold from byte 0 when the file shrinks below its offset (the truncation
-rule), and a rotated file always starts smaller than the offset the consumer
-reached on the previous generation. So a session switch or a rotation costs
-at most one bounded refold of the live file, never the whole history. Read
-the live file only; `.1` exists to survive an in-flight read, not as a
-source of current numbers.
-
-## Development
-
-```bash
-npm test
-```
-
-Core logic lives in `lib/sampler.mjs` and is tested without a Pi host
-(`lib/sampler.test.mjs`).
+MIT — see [LICENSE](https://github.com/WilberC/pi-tokstream/blob/main/LICENSE).
