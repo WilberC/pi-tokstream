@@ -17,6 +17,10 @@ journal and own all presentation.
 
 ## What it solves
 
+- **Latency and cost you can see.** Throughput and token usage (including
+  cache reads and writes) per message and per subagent are the raw numbers
+  behind comparing models, spotting slow providers and checking whether
+  prompt caching is actually hitting.
 - **"Is the model actually streaming, and how fast?"** A side panel can show a
   live rate without hooking into Pi itself.
 - **Invented numbers.** Estimates are labeled as estimates, provider numbers as
